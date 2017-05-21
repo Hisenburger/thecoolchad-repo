@@ -3,8 +3,22 @@ import sys
 import time
 import threading
 
+from geopy.geocoders import Nominatim #optional 
 from foursquare import Foursquare
 from watson_developer_cloud import ConversationV1
+"""
+address="500 East 4th St Austin, Texas"
+
+geolocator = Nominatim()
+
+location = geolocator.geocode(address)
+
+latitude = location.latitude
+
+longitude = location.longitude
+
+print latitude, longitude
+"""
 
 class HealthBot():
 
@@ -39,6 +53,9 @@ class HealthBot():
         """
         Initializes the bot, including the required datastores.
         """
+        self.calltraceNo = 0
+        self.travelDistance = 2000
+        self.partySize = 1
         self.user_store.init()
         self.dialog_store.init()
 
@@ -50,6 +67,8 @@ class HealthBot():
         message_sender - The User ID from the messaging platform (Slack ID, or unique ID associated with the WebSocket client) 
         message - The message entered by the user
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO process_message'
         conversation_response = None
         try:
             user = self.get_or_create_user(message_sender)
@@ -72,6 +91,8 @@ class HealthBot():
         message - The message entered by the user
         conversation_context - The active Watson Conversation context
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO send_request_to_watson_conversation'
         return self.conversation_client.message(
             workspace_id=self.conversation_workspace_id,
             message_input={'text': message},
@@ -94,7 +115,8 @@ class HealthBot():
         # The conversationDocId is store in the Watson Conversation context,
         # so we can access it every time a new message is received from a user.
         conversation_doc_id = self.get_or_create_active_conversation_id(user, conversation_response)
-            
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_response_from_watson_conversation + conversation_doc_id ' + conversation_doc_id
         # Every dialog in our workspace has been configured with a custom "action"
         # that is available in the Watson Conversation context.
         # In some cases we need to take special steps and return a customized response
@@ -104,8 +126,26 @@ class HealthBot():
             action = conversation_response['context']['action']
         else:
             action = None
+        
+        print action
         if action == "findDoctorByLocation":
             reply = self.handle_find_doctor_by_location_message(conversation_response)
+        elif action == "eventLocation":
+            test = 1
+            print test
+            reply = self.handle_find_venue_by_location_message(conversation_response)
+        elif action == "getEventType":
+            print ' do nothing for getEventType'
+            reply = 'Sounds fun!  How far do you want to travel (meters) ?'
+        elif action == "doNothing":
+            print ' do nothing for doNothing'
+            reply = 'okay'
+        elif action == "setTheDistance":
+            print 'action is setTheDistance'
+            reply = self.handle_find_travel_distance_message(conversation_response)
+        elif action == "getPartySize":
+            print 'action is getPartySize'
+            reply = self.handle_get_party_size_message(conversation_response)
         else:
             reply = self.handle_default_message(conversation_response)
 
@@ -125,6 +165,8 @@ class HealthBot():
         ----------
         conversation_response - The response from Watson Conversation
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_default_message + conversation response '
         reply = ''
         for text in conversation_response['output']['text']:
             reply += text + "\n"
@@ -139,6 +181,8 @@ class HealthBot():
         ----------
         conversation_response - The response from Watson Conversation
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_find_doctor_by_location_message '
         if self.foursquare_client is None:
             return 'Please configure Foursquare.'
         # Get the specialty from the context to be used in the query to Foursquare
@@ -170,6 +214,108 @@ class HealthBot():
                 reply = reply + '* ' + venue['name']
         return reply
 
+    def handle_find_travel_distance_message(self, conversation_response):
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_find_travel_distance_message'
+        if 'input' in conversation_response.keys() and 'text' in conversation_response['input'].keys():
+            print ' it is an input text '
+            print conversation_response['input']['text'] 
+            self.travelDistance = int(conversation_response['input']['text'])
+            reply = 'You want to travel: ';
+            reply =  reply  + str(self.travelDistance) + ' meters. \n';
+            reply =  reply + "Great, what area are you looking at?"
+        else:
+            action = None
+        
+        #if 'entities' in conversation_response.keys():
+        #    for entity in conversation_response['entities']:
+        #        if (entity['entity'] == 'sys-number'):
+        #            print entity['value']
+        #            print int(entity['value'])
+        #            self.travelDistance = int(entity['value'])
+        #            print self.travelDistance
+        #            reply =  reply  + str(self.travelDistance) + '\n';
+        return reply
+
+    def handle_get_party_size_message(self, conversation_response):
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_get_party_size_message'
+        if 'input' in conversation_response.keys() and 'text' in conversation_response['input'].keys():
+            print ' it is an input text '
+            print conversation_response['input']['text'] 
+            self.partySize = int(conversation_response['input']['text'])
+            reply = 'Great, you are planning for a party size of ';
+            reply =  reply  + str(self.partySize) + ' . \n';
+            #reply = 'Great, what area are you looking at?  \n';
+            reply = reply + 'Great, what kind of activity would you like to do?  \n';
+        else:
+            action = None
+        
+        return reply
+
+    def handle_find_venue_by_location_message(self, conversation_response):
+        """
+        The handler for the findVenueByLocation action defined in the Watson Conversation dialog.
+        Queries Foursquare for doctors based on the speciality identified by Watson Conversation
+        and the location entered by the user.
+        Parameters
+        ----------
+        conversation_response - The response from Watson Conversation
+        """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO handle_find_venue_by_location_message'
+        if self.foursquare_client is None:
+            return 'Please configure Foursquare.'
+        # Get the eventType from the context to be used in the query to Foursquare
+        query = ''
+        if 'eventType' in conversation_response['context'].keys() and conversation_response['context']['eventType'] is not None:
+            query = query + conversation_response['context']['eventType'] + ' '
+        query = query # + 'Doctor'
+        # Get the location entered by the user to be used in the query
+        location = ''
+        if 'entities' in conversation_response.keys():
+            for entity in conversation_response['entities']:
+                if (entity['entity'] == 'sys-location'):
+                    if len(location) > 0:
+                        location = location + ' '
+                location = location + entity['value']
+        # full address lookup is not supported by Foursquare
+        #location = conversation_response['input']['text']
+        #address="500 East 4th St Austin, Texas"
+        address=conversation_response['input']['text']
+        geolocator = Nominatim()
+        locationll = geolocator.geocode(address)
+        latitude = locationll.latitude
+        longitude = locationll.longitude
+        print ' latitude ' + str(latitude) + '  longitude  '  + str(longitude)
+        print locationll
+        local = str(latitude) +',' + str(longitude)
+        params = {
+            'query': query,
+            #'near': location,
+            'll' : local,
+            #'radius' : 5000
+            'radius': self.travelDistance
+        }
+        venues = self.foursquare_client.venues.search(params=params)
+        if venues is None or 'venues' not in venues.keys() or len(venues['venues']) == 0:
+            reply = 'Sorry, I couldn\'t find any venues near you.'
+        else:
+            for venue in venues['venues']:
+                reply = 'How about '+ venue['name'] +' ? \n';
+                break
+            """
+            reply = 'Here is what I found:\n';
+            count = 0
+            for venue in venues['venues']:
+                count = count + 1
+                if len(reply) > 0:
+                    reply = reply + '\n'
+                reply = reply + str(count) + ') \t ' + venue['name'] + ' --- has tips ' + str(venue['stats']['tipCount'])
+            reply = reply + '\n What venue number would you like to go ?'
+            """
+        return reply
+
     def get_or_create_user(self, message_sender):
         """
         Retrieves the user doc stored in the Cloudant database associated with the current user interacting with the bot.
@@ -178,6 +324,8 @@ class HealthBot():
         ----------
         message_sender - The User ID from the messaging platform (Slack ID, or unique ID associated with the WebSocket client) 
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO get_or_create_user'
         return self.user_store.add_user(message_sender)
 
     def update_user_with_watson_conversation_context(self, user, conversation_context):
@@ -188,6 +336,8 @@ class HealthBot():
         user - The user doc associated with the active user
         conversation_context - The Watson Conversation context
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO update_user_with_watson_conversation_context'
         return self.user_store.update_user(user, conversation_context)
 
     def get_or_create_active_conversation_id(self, user, conversation_response):
@@ -200,6 +350,8 @@ class HealthBot():
         user - The user doc associated with the active user
         conversation_response - The response from Watson Conversation
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO get_or_create_active_conversation_id'
         if 'newConversation' in conversation_response['context'].keys():
             new_conversation = conversation_response['context']['newConversation']
         else:
@@ -224,6 +376,8 @@ class HealthBot():
         message - The message sent by the user
         reply - The reply sent to the user
         """
+        self.calltraceNo = self.calltraceNo + 1
+        print  str(self.calltraceNo) + ' CALLNO  log_dialog  conversation_doc_id ' + conversation_doc_id  
         dialog_doc = {
             'name': name,
             'message': message,
